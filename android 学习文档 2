@@ -1,0 +1,434 @@
+6. Service
+Service即Android中后台进行的操作，例如，退出音乐播放器的Activity后，音乐任在播放，或者当需要下载一个较大的文件时，选择将其交给后台服务完成，前台可以继续操作Activity。同时，也可以在服务中开启多个线程，并发处理多个任务。
+服务通过继承Service类实现，服务的启动通过Intent实现，且只能使用显示Intent来开启一个服务，定义一个Intent对象后，通过调用startService()方法开启指定的服务，通过其他组件调用stopService()或者自身的selfStop()停止该服务。
+6.1 Service内部函数
+1.	onCreate()与onDestroy()：与Activity类似，Service的创建与销毁由这两个函数实现，当其他组件第一次调用startService()后，调用onCreate()创建服务，保持运行状态，此后再调用startService()不再调用onCreate()；
+2.	onStartCommand()：当使用startService()开启服务，创建服务后，调用 onStartCommand()运行服务，运行完成系统即可销毁服务；
+3.	onBind()与onUnbind()：同一进程下的组件可以通过Binder类绑定服务，与服务进行通信，在合适的时机调用服务不同的功能，如果无法与服务进行通信，那么开启服务后无法得知运行的进展，因此需要使用Binder。用户可以使用bindService()来创建并开启一个服务，unbindeService()解除绑定后，即可销毁服务。
+6.2 绑定Service
+服务与同进程下的组件通信通过Binder来实现。
+首先，需要在Service中定义Binder的子类，并定义一个子类Binder对象，在onBind()中返回这个Binder对象。
+在需要开启服务的Activity中，定义一个Service.Binder对象，实现ServiceConnectiion匿名类，重写方法onServiceConnected()用于与服务绑定，在此接受Binder，获取上述Binder对象的实例，此后可以通过Binder调用服务中实现的public方法；实现onServiceUnconnected()用于解绑。
+例如：
+public class MusicService extends Service {
+    MediaBinder mBinder = new MediaBinder();
+    class MediaBinder extends Binder {
+…//Binder可实现的方法
+    }
+
+public class MainActivity extends AppCompatActivity{
+MusicService.MediaBinder binder;
+private ServiceConnection connection = new ServiceConnection() {
+    public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
+        binder = (MusicService.MediaBinder) iBinder;//实例化binder
+       }
+    public void onServiceDisconnected(ComponentName componentName) {
+       }
+}；
+protected void onCreate(Bundle savedInstanceState) {
+    Log.d(this.TAG,"on create");
+    super.onCreate(savedInstanceState);
+    Intent bindeService = new Intent(this, MusicService.class);
+    bindService(bindeService, connection, BIND_AUTO_CREATE);//绑定并创建服务
+}
+}
+6.3 服务的生命周期
+服务的生命周期如下图所示：
+ 
+有两种控制Service生命周期的方法。一种是显式的startService，stopService；另一种是隐式的bindService和unbindService。但不管那种方式，Service的实例只有一个。那么Service是什么时候真正终止，什么时候启动呢。
+一个Service有两个计数，一个是由于startService导致的计数，另一个是bindService导致的计数。这两个函数的任何一个调用都会导致相应计数的增加。
+对应的两个函数stopService和unbindService的调用会导致Service计数的减少。不过stopService会将相应的计数归零。
+两个计数都为零的时候Service不存在；当任何一个计数增加的时候，如果其实例不存在，那么会自动的建立此Service的实例，也就是调用Service的构造函数，然后调用Service的onCreate函数。当两个计数都为零的时候，Service会自动的销毁，也就是调用Service的onDestroy函数。
+6.4 前台服务
+前台服务能够保持一个通知运行在状态栏，例如，天气预报该类服务。前台服务的实现与发送一个Notification的方式非常相似，不同之处为，不再适用NotificationManager发送通知，调用startForeground(int id ,Notification notification)使将通知显示出来。
+7. SQLite
+7.1 SQLiteOpenHelper类
+SQLiteOpenHelper类是Android为了让用户更方便地创建于管理数据库提供的抽象类，该类是一个抽象类，需要实现onCreate()方法与onUpgrade()方法。
+其中，onCreate()实现创建数据库时进行的操作，例如创建数据库模式信息，onUpgrade()实现更新数据库版本时进行的操作，例如修改数据库模式信息。
+以下将介绍SQLiteHelper类提供的构造方法与常用API。
+1.	常用构造方法
+public DatabaseHelper(Context context, String name, CursorFactory factory, int version)
+context：上下午对象；
+name：创建的数据库名称；
+factory：用于创建一个Cursor对象，一般为null；
+version：定义的版本号，起始号为1，通过onUpgrade()与onDowngrade()进行升级与降级；
+2.	公共API
+方法名	返回类型	参数名	参数类型	描述
+close	void			关闭所有的数据库对象
+getDatabaseName	String			获取当前打开的数据库名
+getReadableDatabase	SQLiteDatebase			以只读模式打开数据库，返回一个数据库对象
+getWritableDatabase	SQLiteDatebase			以可写模式打开数据库返回一个数据库对象
+abstract onCreate	void	db	SQLiteDatabase	当数据库第一次创建时调用，实现创建时的数据库建模
+onDowngrade	void	db	SQLiteDatabase	需要降级的数据库
+		int	oldVersion	降级的目标旧版本号
+		int	newVersion	新版本号
+abstartct onUpgrade	void	db	SQLiteDatabase	需要升级的数据
+		int	oldVersion	旧版本号
+		int	newVersion	新版本号
+当构造Database
+-Helper类时，只要version大于之前版本，调用该方法，执行方法内定义的升级操作
+setWriteAheadLogging
+-Enabled	void	enabled	boolean	允许WAL
+3.	示例
+public class MyDatabaseHelper extends SQLiteOpenHelper {
+    private Context mContext;
+    public static final String DATABASE_CREATE =
+            "CREATE TABLE music"+
+            "(music_id integer PRIMARY KEY autoincrement,"+
+            "music_name text,"+
+            "music_uri);";
+    public static  final  String DATABASE_DROP =
+            "DROP TABLE music;";
+    public MyDatabaseHelper(Context context, String name, SQLiteDatabase.CursorFactory factory, int version) {
+        super(context, name, factory, version);
+        mContext = context;
+    }
+    @Override
+    public void onCreate(SQLiteDatabase sqLiteDatabase) {
+        sqLiteDatabase.execSQL(this.DATABASE_CREATE);
+        Toast.makeText(mContext,"create table music success!",Toast.LENGTH_SHORT).show();
+    }
+    @Override
+    public void onUpgrade(SQLiteDatabase sqLiteDatabase, int i, int i1) {
+    }
+}
+
+7.2 SQLiteDatabase类
+创建SQLiteOpenHelpe()对象后，调用getReadableDatabase()或getWritableDatabase()函数获取一个打开对应数据库名，获取SQLiteDatabase示例，调用其公共API对数据进行操作。
+数据库DDL主要分为“增删改查”四种操作，以上四种操作可通过一下API来完成：
+方法名	返回类型	参数名	参数类型	描述
+execSQL	void	sql	String	进行增删改等非查询操作
+execSQL	void	sql		sql语句，values值输入？,？
+		bindArgs	Object[]	存储values值
+insert	long	table	String	表名
+		nullColumnHack	String	可以为null，当values参数为空或者里面没有内容的时候，insert是会失败的，用于指定一个列名插入null值
+		values	ContentValues	以k-v形式加入Content
+-Values，key为列名，v为值
+query	Cursor	distinct	boolean	是否查询输出distinct
+		table	String	表名
+		columns	String[]	查询列名
+		selection	String	where子句，不包括where，查询值可以为？
+		selectionArgs	String[]	查询条件的值，对应上述？
+		groupBy	String	groupBy的列名（不包括groupBy）
+		having	String	having子句（不包括having）
+		orderBy	String	orderBy子句，不包括orderBy
+		limit	String	limit子句，同上
+rawQuery	Cursor	sql	String	sql语句，查询值可以为？
+		selectionArgs	String[]	对应查询值
+其他常用API
+getPath	String			获取数据库文件的路径
+getpagesize	long			返回当前数据库页面大小（KB）
+deleteDatabase	boolean	file	File	删除数据库，输入数据库文件路径
+disableWrite
+-AheadLogging	boolean			不允许WAL
+enableWrite
+-AheadLogging	boolean			允许WAL
+beginTransaction	void			开启事务，之后跟try
+setTransaction
+-Successful	void			事务执行成功，相当于commit
+endTransaction	void			结束事务
+7.3 Cursor类
+查询完成后，获取一个SQLiteCursor对象对结果集进行遍历。
+一下介绍常用API。
+方法名	返回类型	参数名	参数类型	描述
+close	void			关闭游标
+getColumnIndex		columnName	String	获取列名偏移量（0开始）
+getColumnName		columnIndex	int	获取对应偏移量列名
+getColumnNames	String[]			返回所有列名
+getCount	int			返回结果行数
+getDatabase	SQLiteDatabase			获取对应数据行数
+moveToFirst	boolean			移动到第一行
+moveToLast	boolean			最后一行
+moveToNext	boolean			下一行
+moveToPrevious	boolean			上一行
+moveToPosition	boolean	position	int	指定位置
+getInt	int	columnIndex	int	以int类型获取对应偏移量属性值
+getString	String	columnIndex	int	以String类型获取对应偏移量属性值
+get+数据类型	数据类型	columnIndex	int	以对应类型获取对应偏移量属性值
+8. CotentProvidrt
+ContentProvider在android中的作用是对外共享数据，即可以通过ContentProvider把应用中的数据共享给其他应用访问，其他应用可以通过ContentProvider对应用中的数据进行添删改查。
+8.1 URI
+Uri代表了要操作的数据，Uri主要包含了两部分信息：1>需要操作的ContentProvider ，2>对ContentProvider中的什么数据进行操作，一个Uri由以下几部分组成：  
+ ContentProvider（内容提供者）的scheme已经由Android所规定， scheme为：content://
+主机名（或叫Authority）用于唯一标识这个ContentProvider，外部调用者可以根据这个标识来找到它。
+路径（path）可以用来表示我们要操作的数据，路径的构建应根据业务而定，如下:
+要操作person表中id为10的记录，可以构建这样的路径:/person/10
+要操作person表中id为10的记录的name字段， person/10/name
+要操作person表中的所有记录，可以构建这样的路径:/person
+当然要操作的数据不一定来自数据库，也可以是文件、xml或网络等其他存储方式，如下:
+要操作xml文件中person节点下的name节点，可以构建这样的路径：/person/name        
+8.2 ContentResolver
+Android中当需要访问外部数据时，使用ContentResolver提供的统一API对外部数据进行访问，通过URI中匹配到相应的数据，使用统一API对外部数据进行增删改查，其中主要包括以下几个方法：
+方法名	返回值	参数名	参数类型	描述
+insert	Uri	uri	Uri	数据Uri
+		values	ContentValues	插入的数值
+delete	Uri	uri	Uri	数据Uri
+		selection	String	查询条件
+		selectionArgs	String[]	查询条件中的值
+update	Uri	uri	Uri	数据Uri
+		values	ContentValues	更新的数值
+		selection	String	查询条件
+		selectionArgs	String[]	查询条件中的值
+query	Cursor	uri	Uri	数据Uri
+		projection	String[]	查询的列名
+		selection	String	查询条件
+		selectionArgs	String[]	查询条件中的值
+		 sortOrder	String	排序依据的列名
+其中ContentValue对象调用方法put(key,value)，value可为Byte~Double、byte、String、Boolean数据类型。
+8.3 ContentProvider
+进程间共享数据的本质是：添加、删除、获取 & 修改（更新）数据。所以ContentProvider的核心方法也主要是上述4个作用，以下是ContentProvider的核心方法（在定义自定义的ContentProvider时必须实现的6各抽象方法）：
+1.	public Uri insert(Uri uri, ContentValues values) 
+  // 外部进程向 ContentProvider 中添加数据
+
+2.	public int delete(Uri uri, String selection, String[] selectionArgs) 
+  // 外部进程 删除 ContentProvider 中的数据
+
+3.	public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs)
+  // 外部进程更新 ContentProvider 中的数据
+
+4.	public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,  String sortOrder)　 
+  // 外部应用 获取 ContentProvider 中的数据
+注：上述四个方法的参数与查询数据库、调用ContentResolver的涵义相同，由外部进程回调，并运行在ContentProvider进程的Binder线程池中，若不是访问SQLite数据库，需要处理多进程并发数据同步的问题。
+5.	public boolean onCreate() 
+// ContentProvider创建后 或 打开系统后其它进程第一次访问该ContentProvider时 由系统进行调用，可用于获取文件路径、打开数据库连接等操作。
+注：运行在ContentProvider进程的主线程，故不能做耗时操作
+
+6.	public String getType(Uri uri)
+// 得到数据类型，即返回当前 Url 所代表数据的MIME类型
+
+8.4  UriMatcher
+UriMatcher类为ContentProvider进行Uri匹配时的辅助类，当实现自定义ContentProvider时，可能需要查询不同的数据，即可使用UriMatcher类进行数据源匹配。
+首先，用户可在ContentProvider中创建UriMatcher对象，然后调用addUri(String authority, String path, int code)注册不同Uri，即将对应不同的authority/path赋予不同的注册码code，在重写ContentProvider方法时，通过调用match(Uri uri)对不同的数据进行操作。
+示例如下：
+// 步骤1：初始化UriMatcher对象
+UriMatcher matcher = new UriMatcher(UriMatcher.NO_MATCH); 
+//常量UriMatcher.NO_MATCH  = 不匹配任何路径的返回码，即初始化时不匹配任何东西
+
+// 步骤2：在ContentProvider 中注册URI（addURI（））
+int URI_CODE_a = 1；
+int URI_CODE_b = 2；
+matcher.addURI("cn.scu.myprovider", "user1", URI_CODE_a); 
+matcher.addURI("cn.scu.myprovider", "user2", URI_CODE_b);
+
+//步骤3：根据Uri匹配返回的code，获取ContentProvider相应资源。
+@Override
+Uri insert(Uri uri, ContentValues values){
+ switch(matcher.match(uri){
+case URI_CODE_a:
+    db.insert(“user1”,null,values);
+    break;
+case URI_CODE_b:
+    db.insert(“user2”,null,values);
+    break;
+}
+}
+9. Handler
+Handler是android给我们提供用来更新UI的一套机制，也是一套消息处理机制，我们可以通过它发送消息，也可以通过它处理消息，它既可以发送消息也可以接收消息。当我们在子线程中对UI进行更改的操作的时候，应用会崩溃，系统提示我们不能在子线程中进行更新UI的操作。
+9.1相关概念
+ 
+1.	Handler：用于处理接受的消息与发送消息，Handler要发挥作用，必须所在线程用有Looper对象，一个线程可以创建多个Handler实例，但是一个Handler只对应一个Looper或Message Queen；
+2.	Massage：Handler发送与接受的消息；
+3.	Looper：每个线程只能够有一个Looper,管理MessageQueue,不断地从中取出Message分发给对应的Handler处理，主线程自动初始化Looper对象，其他线程需要Looper.prepare()实例化对象，与Looper.loop()开始发挥作用；
+4.	Message Queen：用于存放接受的Message，当线程创建Looper时，将创建其唯一的Message Queen；
+9.2Message类
+1.	重要成员变量：
+变量名	数据类型	描述
+arg1	int	存储入Message的简单信息
+arg2	int	存储入Message的简单信息
+obj	Object	可将任意对象存储入Message进行传递消息
+relyTo	Messenger	用于发送该Message的回复的Messanger
+what	int	用户定义的Message代码，用于辨识Message内容
+		
+2.	构造方法
+	Message() 新建一个Message对象，一般使用Message.Obtain()从消息池中获取消息（若消息池中没有空闲的消息，才新建一个），由此可提高效率。
+	Message obtain():从消息池中获取一个空消息，通过指定Message.what,Message.arg…对消息内容进行填充，若为setTarget(Handler handler)指定对应Handler，调用Handler.sendMessage()发送消息，若指定了target，可直接调用Message.sendToTarget()发送消息。
+	Message obtain(Handler h, int what, int arg1, int arg2, Object obj):在获取时直接对Message内容进行赋值。
+	void recycle()回收消息到消息池中
+	void sentData（Bundle data）将一个Bundle数据存入消息
+	Bundle getData()获取消息中的Bundle数据
+9.3Handler使用方式
+1.	构造方式：
+	public Handler() 
+	public Handler (Callback callback) 
+	public Handler (Looper looper) 
+	public Handler(Looper looper, Callback callback)
+其中前两种方法未指定Looper，即绑定到当前线程的Looper，其中Callback是Handler的内部接口，其代码如下:
+public interface Callback {
+        public boolean handleMessage(Message msg);
+}
+当未传入实现了handleMessage()的Callback时，需要在Handler中实现该方法用于处理接受到的消息。
+如下例所示：
+private Handler handler = new Handler(){
+		public void handleMessage(android.os.Message msg) {
+            switch（msg.what）{      
+              case 1：
+              textView.setText((String)msg.object);
+              break；
+}
+		};
+
+2.	发送消息：
+首先应该获取一个Handler对象，使用该对象将消息发送给绑定的线程。
+	发送Message：
+通过Message.obtain()方法从消息池中获取一个Massage，对Massage的what，arg1，arg2以及object进行赋值，调用Handler.sendMessage()方法将消息发送到对应线程的Message Queen中，接受消息的线程使用Looper从Message Queen中按序获取消息，根据what值进行不同的处理。
+其中，还可以调用一下几个方法，延时或定时发送消息。
+sendMessageDelay（Message msg，long time）//延迟time毫秒发送该消息；
+sendMessageAtTime（Message msg，long time）//在time时刻发送消息，time以SystemClock.uptimeMillis()为基准
+//实际sendMessage()与sendMessageDelay()均通过sendMessageAtTime()实现。
+该方式如下例所示：
+Message msg  = Message.obtain();
+msg.what = 1;
+msg.object = “Handler Message”;
+handler.sendMessage(msg);
+	发送Runnable对象
+Handler可以使用post()方法传递的是一个runnable对象，更新UI的操作也是在这个runnable的run方法中进行的，也就是说run方法中的代码是执行在主线程中的，虽然它是写在工作线程中，主线程在接收到消息后自动执行runnable的run方法中的代码。
+post方式同样可以调用postDelay()与postAtTime（）来延迟或者定时进行线程间通信。实际上post方法的由sendMessage实现。
+该方法如下例所示：
+  handler.post(new Runnable() {
+                       //run方法中的代码执行在UI线程中
+                        @Override
+                        public void run() {
+                            textview.setText("post发来消息");
+                        }
+                    });
+9.4内存泄漏
+java中的非静态内部类和匿名内部类将隐式持有当前类的外部引用，当采用非静态内部类定义Handler时，由于其保持外部类的引用，当Handler未被释放，外部类也无法释放，因此即使外部类对象（例如一个活动）需要被销毁，但当仍有对应的Message未被处理（例如延迟发送的Message），由于其持有Handler对象引用，Hander对象无法被销毁，由此外部类对象也无法被销毁，导致内存泄露。
+解决方法：
+1.	使用静态内部类继承Handler，静态内部类不会持有外部类的引用，当静态内部类中调用外部类使用弱引用。此外，Handler子类中的Runnable需要设置为静态成员。
+例如：
+private static class MyHandler extends Handler{
+        private final WeakReference<HandlerActivity> mActivty;
+        public MyHandler(HandlerActivity activity){
+            mActivty =new WeakReference<HandlerActivity>(activity);
+        }
+        @Override
+        public void handleMessage(Message msg) {
+            HandlerActivity activity=mActivty.get();
+            super.handleMessage(msg);
+            if(activity!=null){
+                  }
+        }
+    }
+    private static final Runnable myRunnable = new Runnable() {
+        @Override
+        public void run() {
+               }
+    };
+2.	在Activity onDestroy()时调用，调用Handler.removeCallbacks（）将未处理的Message全部移除；或者关闭Activity时，关闭后台线程。
+9.5Messenger
+Messenger是通过Message与Handler进行进程间通信的一种方式。采用Messenger进行进程间通信的步骤如下：
+1.	服务端实现Handler：
+public class MessengerService extends Service{
+…
+public class ServiceHandler extends Handler{
+…
+   @Override
+   public void handleMessage（Message msg）{
+       …
+}
+}
+}
+2.	使用该Handler创建一个Messenger对象：
+final Messenger mMessenger = new Messenger(new ServiceHandler());
+3.	在Service的onBind()方法中，返回Messenger对象获取的IBinder对象：
+@Override
+    public IBinder onBind(Intent intent) {
+            return mMessenger.getBinder();
+    }
+4.	客户端重写ServiceConnection.onServiceConnected()方法时，通过IBinder获取服务端对应的Messenger对象，采用该对象像服务端发送消息：
+public class MessengerActivity extends Activity{
+…
+Messenger serviceMessenger ;
+private ServiceConnection conn = new ServiceConnection() {
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+        }
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            serviceMessenger = new Messenger(service);
+        }
+    };
+   …
+}
+5.	由于如今不允许隐式启动服务，因此在启动其他进程服务时，需要知道该服务所在包名与服务的完整名称，通过Intent.setComponet(new ConmponetName( “服务包名”，“服务包名.服务完整名称”)指定Intent对象的Component显示启动或绑定服务；
+6.	使用获取的Messenger对象向服务发送消息，实例化一个Message对象，调用Messenger.send()发送消息，例如：
+Message message = Message.obtain(null, 1); //获得消息载体
+    Bundle data = new Bundle();
+    data.putString("NUM", "Activity信使");
+    message.setData(data);//写入数据
+    try {
+        messenger.send(message);//发送数据
+    } catch (RemoteException e) {
+        // TODO Auto-generated catch block
+        e.printStackTrace();
+    }
+7.	若需要服务端与客户端的双向通信，在客户端按步骤1实现自己的Messenger对象，将该Messenger对象通过Message.reply进行赋值传递给服务端，服务端获取了客户端的Messenger对象，通过其发送消息给客户端。
+10.AIDL
+采用Messenger可以进行进程间通信，但是Messenger的请求是通过消息队列，即请求是串行的，尽管没有资源互斥与同步的问题，但无法高校解决大量并发的请求。因此可使用AIDL（Android Interface Definition Language）实现进程间的通信，使得绑定其他进程的服务，调用其方法与本进程服务没有区别。
+AIDL是一套定义语言，只需要定义好接口，通过开发工具自动编译Java代码完成进程间通信的工作（Binder机制）。AIDL自身支持几种基本数据类型，其他类型需要实现Parcelable接口，才能通过Parcelable AIDL文件引入。
+10.1支持数据类型
+	Java中的八种基本数据类型，包括 byte，short，int，long，float，double，boolean，char。
+	String 类型。
+	CharSequence类型。
+	List类型：List中的所有元素必须是AIDL支持的类型之一，或者是一个其他AIDL生成的接口，或者是定义的parcelable（下文关于这个会有详解）。List可以使用泛型。
+	Map类型：Map中的所有元素必须是AIDL支持的类型之一，或者是一个其他AIDL生成的接口，或者是定义的parcelable。Map是不支持泛型的。
+	定向tag：AIDL中的定向 tag 表示了在跨进程通信中数据的流向，其中 in 表示数据只能由客户端流向服务端， out 表示数据只能由服务端流向客户端，而inout 则表示数据可在服务端与客户端之间双向流通。其中，数据流向是针对在客户端中的那个传入方法的对象而言的。in 为定向 tag 的话表现为服务端将会接收到一个那个对象的完整数据，但是客户端的那个对象不会因为服务端对传参的修改而发生变动；out 的话表现为服务端将会接收到那个对象的的空对象，但是在服务端对接收到的空对象有任何修改之后客户端将会同步变动；inout 为定向 tag 的情况下，服务端将会接收到客户端传来对象的完整信息，并且客户端将会同步服务端对该对象的任何变动。其中，Java 中的基本类型和 String ，CharSequence 的定向 tag 默认且只能是 in 。
+10.2 AIDL使用方式
+1.	Parcelable类型：用于定义AIDL本身不支持的数据类型。
+	首先应该定义该数据类型的实现Parcleable接口的类，实现接口必要的方法，若该数据类型的定向tag为out或者inout时，需要实现readFromParcel()方法。
+2.	定义好需要的数据类型AIDL文件后，定义提供的接口文件，其中接口文件需要import Parcelable文件的完整包名与文件名（尽管在同一个包下），定义好服务端给客户端提供的接口，以及数据流向。
+例如：
+数据类型AIDL（定义了Parcelable类Book）：
+package com.lypeer.ipcclient;
+parcelable Book;
+接口AIDL：
+package com.lypeer.ipcclient;
+import com.lypeer.ipcclient.Book;
+interface BookManager {
+    //所有的返回值前都不需要加任何东西，不管是什么数据类型
+    List<Book> getBooks();
+    //传参时除了Java基本类型以及String，CharSequence之外的类型
+    //都需要在前面加上定向tag，具体加什么量需而定
+    void addBook(in Book book);
+}
+3.	编译编写好的AIDL文件，会自动生成同名.java文件，服务端的IBinder类通过继承AIDL文件名.Stub来实现，在onBind中返回这个对象，例如：
+//由AIDL文件生成的BookManager
+public class AIDLService extends Service {
+    private final BookManager.Stub mBookManager = new BookManager.Stub() {
+        @Override
+        public List<Book> getBooks() throws RemoteException {
+             …
+            }
+        }
+        @Override
+        public void addBook(Book book) throws RemoteException {
+          …
+                }
+    };
+public void onBind(Intent intent){
+  return mBookManager;
+}
+}
+4.	将服务端AIDL文件夹拷贝到客户端，编译生成AIDL同名java文件。
+在需要调用服务的类中，实现内部匿名类ServiceConnection onserviceConnected()方法中获取服务端的IBinder，调用服务端提供的接口。如下所示：
+public class AIDLActivity extends AppCompatActivity{
+private BookManager mBookManager;
+…
+private ServiceConnection connection  = new ServiceConnection(){
+           public void onServiceConnected(ComponentName name, IBinder service){
+                  mBookManager = BookManager.Stub.asInterface(service);
+}
+…
+};
+…
+public void onCreate(){
+…
+Intent intent = new Intent();
+intent.setComponent(new ComponentName(“com.test”, “com.test. AIDLService”));
+bindService(intent, connection, Context.BIND_AUTO_CREATE);
+…
+}
+…
+mBookManager.addBook();
+…
+}
